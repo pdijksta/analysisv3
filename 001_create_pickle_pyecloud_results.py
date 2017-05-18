@@ -219,7 +219,7 @@ print(fail_lines)
 print('IO')
 print(fail_lines_IO)
 
-with open(fail_name,'w') as fail_file:
-    fail_file.write(fail_lines)
-    fail_file.write(fail_lines_IO)
-
+#with open(fail_name,'w') as fail_file:
+#    fail_file.write(fail_lines)
+#    fail_file.write(fail_lines_IO)
+#
