@@ -120,9 +120,11 @@ def create_lists_beams(dict_, var_arr):
 
 
 device_title_dict = {
-        'ArcDipReal' : 'Dipole',
+        'Drift': 'Drift',
+        'ArcDipReal'  : 'Dipole',
         'ArcQuadReal' : 'Quadrupole',
-        'Drift': 'Drift'
+        'ArcSextReal' : 'Sextupole',
+        'ArcOctReal'  : 'Octupole',
         }
 
 def load_pkl(f):
