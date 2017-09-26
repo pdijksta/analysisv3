@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import cPickle
 import re
@@ -20,16 +21,25 @@ parser.add_argument('--mu', action='store_true')
 parser.add_argument('--theta', action='store_true')
 parser.add_argument('--r0', action='store_true')
 parser.add_argument('--ctr', action='store_true')
-parser.add_argument('--verbose', action='store_true')
+parser.add_argument('--verbose', '-v', action='store_true')
 parser.add_argument('--sext', action='store_true')
 parser.add_argument('--dipquad', action='store_true')
 parser.add_argument('--substeps', action='store_true')
 parser.add_argument('--cell', action='store_true')
+parser.add_argument('--energy', action='store_true')
+parser.add_argument('--quad', action='store_true')
+parser.add_argument('--multip', action='store_true')
+parser.add_argument('--mono', action='store_true')
 
 parser.add_argument('dir', help='Directory with the simulations.', metavar='DIR')
 
 args = parser.parse_args()
 root_dir = args.dir
+verbose = args.verbose
+
+def my_print(*args, **kwargs):
+    if verbose:
+        print(*args, **kwargs)
 
 if not os.path.isdir(root_dir):
     raise ValueError('DIR is not a directory')
@@ -95,6 +105,18 @@ elif args.substeps:
 elif args.cell:
     folder_re = re.compile('^LHC_([\w]+)_(\d+)GeV_sey(\d\.\d+)_(\d+\.\d+)e11ppb_(\d)')
     identifiers = ['device', 'energy', 'sey', 'intensity', 'photoemission']
+elif args.energy:
+    folder_re = re.compile('^LHC_([\w]+)_(\d+)GeV_sey(\d\.\d+)_(\d+\.\d+)e11ppb_(\w+)')
+    identifiers = ['device', 'energy', 'sey', 'intensity', 'distribution']
+elif args.quad:
+    folder_re = re.compile('^LHC_([\w]+)_(\d+)GeV_sey(\d\.\d+)_(\d+\.\d+)e11ppb_(\d+\.\d)Tpm')
+    identifiers = ['device', 'energy', 'sey', 'intensity', 'b_field']
+elif args.multip:
+    folder_re = re.compile('^LHC_([\w]+)_(\d+)GeV_sey(\d\.\d+)_(\d+\.\d+)e11ppb_(\d+)')
+    identifiers = ['device', 'energy', 'sey', 'intensity', 'b_field_id']
+elif args.mono:
+    folder_re = re.compile('^LHC_([\w]+)_(\d+)GeV_sey(\d\.\d+)_(\d+\.\d+)e11ppb_mono_(\d+\.\d+)eV')
+    identifiers = ['device', 'energy', 'sey', 'intensity', 'photoelectron_energy']
 else:
     raise ValueError('Regex not specified!')
 
@@ -136,51 +158,51 @@ def check_if_already_exist(dictionary, keys):
     else:
         return True
 
-def sort_new_dict_recursively(dictionary):
-    for key in dictionary:
-        if type(dictionary[key]) is dict:
-            sort_new_dict_recursively(dictionary[key])
-        elif type(dictionary[key]) is np.ndarray:
-            dictionary[key] = np.sort(dictionary[key], axis=0)
-        else:
-            raise ValueError('Unknown type!')
-
-def assure_both_beams(dictionary):
-    for key in dictionary:
-        if type(dictionary[key]) is dict:
-            assure_both_beams(dictionary[key])
-        elif type(dictionary[key]) is np.ndarray:
-            mask_one_beam = dictionary[key][:,2] == 0
-            dictionary[key][mask_one_beam,1] *= 2
-        else:
-            raise ValueError('Unknown type!')
+#def sort_new_dict_recursively(dictionary):
+#    for key in dictionary:
+#        if type(dictionary[key]) is dict:
+#            sort_new_dict_recursively(dictionary[key])
+#        elif type(dictionary[key]) is np.ndarray:
+#            dictionary[key] = np.sort(dictionary[key], axis=0)
+#        else:
+#            raise ValueError('Unknown type!')
+#
+#def assure_both_beams(dictionary):
+#    for key in dictionary:
+#        if type(dictionary[key]) is dict:
+#            assure_both_beams(dictionary[key])
+#        elif type(dictionary[key]) is np.ndarray:
+#            mask_one_beam = dictionary[key][:,2] == 0
+#            dictionary[key][mask_one_beam,1] *= 2
+#        else:
+#            raise ValueError('Unknown type!')
 
 # Main loop
 for folder in all_files:
     file_info = re.search(folder_re,folder)
     if file_info is None:
-        print('Folder %s did not match the regex!' % folder)
+        my_print('Folder %s did not match the regex!' % folder)
         continue
     keys = list(file_info.groups())
 
     id_dict = {}
     for identifier, info in zip(identifiers, keys):
         id_dict[identifier] = info
-    print(keys)
+    my_print(keys)
 
 
     if not args.d and check_if_already_exist(hl_dict, keys):
-        print('Continuing for', keys)
+        my_print('Continuing for', keys)
         continue
 
-    mat_str = root_dir + '/' + folder + '/Pyecltest.mat'
+    mat_str = os.path.abspath(root_dir) + '/' + folder + '/Pyecltest.mat'
     if not os.path.isfile(mat_str):
         print('Warning: file %s does not exist' % mat_str)
         fail_ctr += 1
         fail_lines += folder + '\n'
         continue
 
-    print('Trying to read %s.' % mat_str)
+    my_print('Trying to read %s.' % mat_str)
     try:
         matfile = sio.loadmat(mat_str)
     except (IOError, MatReadError):
@@ -203,8 +225,6 @@ for folder in all_files:
     if 'xg_hist' not in nel_hist_dict:
         insert_to_nested_dict(nel_hist_dict, matfile['xg_hist'][0], ['xg_hist'], must_enter=True)
 
-#Sort new style dict
-
 with open(hl_pkl_name, 'w') as pkl_file:
     cPickle.dump(hl_dict, pkl_file, -1)
 
@@ -215,8 +235,9 @@ with open(path_pkl_name, 'w') as pkl_file:
     cPickle.dump(path_dict, pkl_file, -1)
 
 print('%i simulations were successful and %i failed.' % (success_ctr,fail_ctr))
+print('Fails:')
 print(fail_lines)
-print('IO')
+print('IO fails:')
 print(fail_lines_IO)
 
 #with open(fail_name,'w') as fail_file:

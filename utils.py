@@ -1,4 +1,5 @@
 from __future__ import division
+import imp
 import numpy as np
 import cPickle as pickle
 
@@ -15,7 +16,7 @@ def id_keys(dd, identifiers, verbose=False):
         dd = dd[value[0]]
     return id_keys
 
-def create_lists(dict_, var_arr):
+def create_lists(dict_, var_arr, convert_array=True, expert=False):
     var_arr = map(str, var_arr)
     for ctr, var in enumerate(var_arr):
         if var == 'VAR':
@@ -25,12 +26,12 @@ def create_lists(dict_, var_arr):
                 fail = False
                 this_dd = dict_[key]
                 for var in var_arr[ctr+1:]:
-                    if var == 'PASS' and len(this_dd) == 1:
-                        this_dd = this_dd[this_dd.keys()[0]]
-                    elif var =='PASS' and len(this_dd) != 1:
+                    if var =='PASS' and len(this_dd) != 1 and not expert:
                         print(var_arr)
                         print(this_dd.keys())
                         raise ValueError('Illegal use of PASS')
+                    elif var == 'PASS':
+                        this_dd = this_dd[this_dd.keys()[0]]
                     else:
                         try:
                             this_dd = this_dd[var]
@@ -48,16 +49,17 @@ def create_lists(dict_, var_arr):
                 print keys
                 raise ValueError('Empty xx')
 
-            try: xx = np.array(xx, dtype=float)
-            except: pass
-            try: yy = np.array(yy, dtype=float)
-            except: pass
+            if convert_array:
+                try: xx = np.array(xx, dtype=float)
+                except: pass
+                try: yy = np.array(yy, dtype=float)
+                except: pass
 
             return xx, yy
 
         elif var == 'PASS':
             keys = dict_.keys()
-            if len(keys) != 1:
+            if len(keys) != 1 and not expert:
                 print(keys)
                 raise ValueError('Wrong use of PASS')
             dict_ = dict_[keys[0]]
@@ -65,7 +67,10 @@ def create_lists(dict_, var_arr):
             try:
                 dict_ = dict_[var]
             except:
-                import pdb ; pdb.set_trace()
+                print dict_.keys()
+                print var
+                #import pdb ; pdb.set_trace()
+                raise
 
     return [dict_], [42]
 
@@ -130,3 +135,16 @@ device_title_dict = {
 def load_pkl(f):
     with open(f) as f:
         return pickle.load(f)
+
+def load_file_as_module(filename):
+    try:
+        module_name = filename.replace('.','_').replace('/','_')
+        module = imp.load_source(module_name, filename)
+    except:
+        print('Error with file %s' % filename)
+        raise
+
+    return module
+
+
+

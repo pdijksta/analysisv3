@@ -32,12 +32,12 @@ sp.plot(xx, yy)
 first_train = 4*80+15
 
 hl_details = study.heatload_rescaled(first_train, 2748, details=True)
-hl_tot = hl_details['hl']
+hl1, hl2, hl = hl_details['hl1'], hl_details['hl2'], hl_details['hl']
 factor2 = hl_details['factor2']
 
 sp = plt.subplot(2,2,2)
 sp.grid(True)
-sp.set_title('Heat load from e-cloud: %.2f\nMultiplicative factor for second bunch: %.2f' % (hl_tot, factor2))
+sp.set_title('Heat load from e-cloud: %.2f/%.2f->%.2f\nMultiplicative factor for second bunch: %.2f' % (hl1, hl2, hl, factor2))
 sp.set_xlabel('Bunch passages')
 sp.set_ylabel('Heat load from e-cloud [W/m]')
 
@@ -48,6 +48,9 @@ sp.axvline(first_train, label='End of first train', color='black')
 sp.axhline(np.mean(yy), label='Average HL', color='red')
 
 sp.legend()
+
+path_study = ss.heatload_study(path_pkl, identifiers = ['device', 'energy', 'sey', 'intensity', 'photoemission'])
+lists = path_study.create_lists('MB', '6500', 'VAR', '1.1', '1', convert_array=False)
 
 
 plt.show()

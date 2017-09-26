@@ -1,39 +1,47 @@
 from __future__ import division
-import imp
 import os
-import utils
 
 import scipy.io as sio
-from scipy.constants import e
+from scipy.constants import e, c
 import numpy as np
+
+import utils
+
+import HeatLoadCalculators.impedance_heatload as hli
+import HeatLoadCalculators.synchrotron_radiation_heatload as hls
+
+imp_calc = hli.HeatLoadCalculatorImpedanceLHCArc()
+sr_calc = hls.HeatLoadCalculatorSynchrotronRadiationLHCArc()
 
 const_LHC_frev = 11.2455e3
 
 class heatload_study(object):
-    def __init__(self, pkl_file, identifiers):
-        self.dictionary = utils.load_pkl(pkl_file)
+    def __init__(self, pkl_file, identifiers, title=None):
+        """
+        pkl_file, identifiers, title
+        """
+        if type(pkl_file) is str:
+            self.dictionary = utils.load_pkl(pkl_file)
+        else:
+            self.dictionary = pkl_file
         self.identifiers = identifiers
         self.id_keys = utils.id_keys(self.dictionary, self.identifiers)
+        self.title = title
 
-    def create_lists(self, *keys):
-        return utils.create_lists(self.dictionary, keys)
+    def create_lists(self, *keys, **kwargs):
+        return utils.create_lists(self.dictionary, keys, **kwargs)
 
     def create_lists_beams(self, *keys):
         return utils.create_lists_beams(self.dictionary, keys)
 
-class simulation(object):
-    def __init__(self, mat_or_matfile, Dt=1e-11, dec_fact_out=13, b_spac=25e-9, filling_pattern=None):
-        if type(mat_or_matfile) is str:
-            mat = sio.loadmat(mat_or_matfile)
-        else:
-            mat = mat_or_matfile
-        self.mat = mat
-        self.Dt = Dt
-        self.dec_fact_out = dec_fact_out
-        self.b_spac = b_spac
-        if filling_pattern:
-            self.filling_pattern = np.array(filling_pattern, dtype=float)
+    def get_first_entry(self):
+        keys = ['PASS'] * len(self.identifiers)
+        return utils.create_lists(self.dictionary, keys, expert=True)[0][0]
 
+simulation_study = heatload_study
+
+
+class simulation_general(object):
     def electrons_in_chamber(self):
         """
         xx: bunch passages
@@ -42,6 +50,7 @@ class simulation(object):
         xx = self.mat['t'][0,:]/self.b_spac
         yy = self.mat['Nel_timep'][0,:]
         return xx, yy
+
     def electrons_total_from_hist(self):
         """
         xx: bunch passages
@@ -51,27 +60,88 @@ class simulation(object):
         xx = np.array(xrange(0, len(yy)), dtype=float)
         return xx, yy
 
-    def heatload_passage(self):
+    def heatload_passage(self, b_spac=None):
         """
         xx: Bunch passages
         yy: Heat load scaled with the revolution frequency of the LHC and in SI units
         """
-        xx = self.mat['t'][0,:] / self.b_spac
+        if b_spac is None:
+            b_spac = self.b_spac
+
+        xx = self.mat['t'][0,:] / b_spac
         yy = self.mat['En_imp_eV_time'][0,:] * const_LHC_frev * e
 
         # sum to get hl per bunch passage, one point per bunch
         shrink_factor = int(len(xx)/xx[-1])
         yy_max = int(len(yy)/shrink_factor)*shrink_factor
-        yy2 = np.sum(yy[:yy_max].reshape(yy_max/shrink_factor, shrink_factor), axis=1)
+        yy2 = np.sum(yy[:yy_max].reshape(int(yy_max/shrink_factor), shrink_factor), axis=1)
         xx2 = xx[::shrink_factor]
 
-        return xx2[:len(yy2)], yy2 * len(yy2)
-    def heatload_rescaled(self, first_train, bunches_rescaled, verbose=False, details=False):
+        return xx2[:len(yy2)], yy2
+
+    def heatload_total(self):
+        return np.sum(self.mat['En_imp_eV_time']) * const_LHC_frev * e
+
+    def angle_hist_total(self):
+        """
+        Use with plt.step(xx, yy, where='mid')
+        """
+        yy = np.sum(self.mat['cos_angle_hist'], axis=0)
+        xx = np.linspace(0, 1, len(yy))
+        return xx, yy
+
+    def kinetic_energy(self):
+        xx = self.mat['t'][0,:] / self.b_spac
+        yy = self.mat['En_kin_eV_time'][0,:]
+        return xx, yy
+
+    def central_density(self):
+        xx = self.mat['t'][0,:] / self.b_spac
+        yy = self.mat['cen_density'][0,:]
+        return xx, yy
+
+    def energy_impact_hist(self):
+        xx = self.mat['xg_hist'][0,:]
+        yy = np.sum(self.mat['energ_eV_impact_hist'], axis=0)
+        return xx, yy
+
+
+class simulation(simulation_general):
+    def __init__(self, mat_or_matfile):
+        if type(mat_or_matfile) is str:
+            mat = sio.loadmat(mat_or_matfile)
+        else:
+            mat = mat_or_matfile
+        self.mat = mat
+
+
+
+class simulation_from_path(simulation_general):
+    def __init__(self, path):
+        directory = os.path.abspath(os.path.dirname(os.path.expanduser(path)))
+
+        pyecltest = directory+'/Pyecltest.mat'
+        beam_beam = utils.load_file_as_module(directory+'/beam.beam')
+        machine_parameters = utils.load_file_as_module(directory+'/machine_parameters.input')
+        simulation_parameters = utils.load_file_as_module(directory+'/simulation_parameters.input')
+        secondary_emission_parameters = utils.load_file_as_module(directory+'/secondary_emission_parameters.input')
+
+        self.mat = sio.loadmat(pyecltest)
+        self. Dt = simulation_parameters.Dt,
+        self.dec_fact_out = simulation_parameters.dec_fact_out,
+        self.b_spac = beam_beam.b_spac,
+        self.filling_pattern = np.array(beam_beam.filling_pattern_file)
+        self.beam_beam = beam_beam
+        self.machine_parameters = machine_parameters
+        self.simulation_parameters = simulation_parameters
+        self.secondary_emission_parameters = secondary_emission_parameters
+
+    def heatload_rescaled(self, first_train, bunches_rescaled, verbose=False, details=False, double_hl=False):
         """
         first train: bunch number after which the first train is considered to have ended.
         the rest of the beam is supposed to be the second train.
         The heat load of the first train and the second train is rescaled to the total bunches,
-        where the first tran is only considered once.
+        where the first train is only considered once.
         """
         hl_arr = self.mat['En_imp_eV_time'][0,:] * const_LHC_frev * e
         t_arr = self.mat['t'][0,:]
@@ -83,7 +153,12 @@ class simulation(object):
         n_bunches_second = np.sum(self.filling_pattern[first_train:])
 
         factor2 = (bunches_rescaled - n_bunches_first)/n_bunches_second
-        hl = np.sum(hl_arr[mask_first_bunch]) + np.sum(hl_arr[mask_second_bunch])*factor2
+        hl1 = np.sum(hl_arr[mask_first_bunch])
+        hl2 = np.sum(hl_arr[mask_second_bunch])
+
+        hl = hl1 + hl2 * factor2
+        if double_hl:
+            hl *= 2
 
         if verbose or details:
             factor_alt = bunches_rescaled/(n_bunches_first+n_bunches_second)
@@ -98,18 +173,17 @@ class simulation(object):
         else:
             return hl
 
+    def calc_impedance_sr(self, bunches_rescaled=None):
+        bunch_int = np.array([self.beam_beam.fact_beam * self.filling_pattern])
+        sigma_t = self.beam_beam.sigmaz/c
+        fill_energy = self.beam_beam.energy_eV
+        #n_bunches = np.sum(self.filling_pattern)
+        imp = imp_calc.calculate_P_Wm(bunch_int, sigma_t, fill_energy) *53.45
+        sr = sr_calc.calculate_P_Wm(bunch_int, sigma_t, fill_energy) *53.45
 
-def simulation_from_path(path):
-    directory = os.path.expanduser(os.path.abspath(os.path.dirname(path)))
-
-    pyecltest = directory+'/Pyecltest.mat'
-    beam_beam = imp.load_source('beam.beam', directory +'/beam.beam')
-    #machine_parameters = imp.load_source('machine_parameters', directory +'/machine_parameters.input')
-    simulation_parameters = imp.load_source('simulation_parameters', directory +'/simulation_parameters.input')
-    sim = simulation(pyecltest,
-                     Dt=simulation_parameters.Dt,
-                     dec_fact_out=simulation_parameters.dec_fact_out,
-                     b_spac=beam_beam.b_spac,
-                     filling_pattern=beam_beam.filling_pattern_file)
-    return sim
+        if bunches_rescaled is None:
+            factor = 1
+        else:
+            factor = bunches_rescaled/np.sum(self.filling_pattern)
+        return imp*factor, sr*factor
 
