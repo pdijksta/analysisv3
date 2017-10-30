@@ -14,6 +14,7 @@ imp_calc = hli.HeatLoadCalculatorImpedanceLHCArc()
 sr_calc = hls.HeatLoadCalculatorSynchrotronRadiationLHCArc()
 
 const_LHC_frev = 11.2455e3
+const_len_cryogenic_cell = 53.45
 
 class heatload_study(object):
     def __init__(self, pkl_file, identifiers, title=None):
@@ -37,6 +38,15 @@ class heatload_study(object):
     def get_first_entry(self):
         keys = ['PASS'] * len(self.identifiers)
         return utils.create_lists(self.dictionary, keys, expert=True)[0][0]
+
+    def create_lists_path(self, func_name, func_args, func_kwargs, *keys, **kwargs):
+        xx, paths = self.create_lists(*keys, **kwargs)
+        yy = []
+        for path in paths:
+            sim = simulation_from_path(path)
+            function = getattr(sim, func_name)
+            yy.append(function(*func_args, **func_kwargs))
+        return xx, np.array(yy)
 
 simulation_study = heatload_study
 
@@ -106,6 +116,7 @@ class simulation_general(object):
         return xx, yy
 
 
+
 class simulation(simulation_general):
     def __init__(self, mat_or_matfile):
         if type(mat_or_matfile) is str:
@@ -145,7 +156,7 @@ class simulation_from_path(simulation_general):
         """
         hl_arr = self.mat['En_imp_eV_time'][0,:] * const_LHC_frev * e
         t_arr = self.mat['t'][0,:]
-        b_spac_arr = t_arr/ self.b_spac
+        b_spac_arr = t_arr/self.b_spac
 
         mask_first_bunch = b_spac_arr < first_train
         mask_second_bunch = b_spac_arr > first_train
@@ -173,17 +184,33 @@ class simulation_from_path(simulation_general):
         else:
             return hl
 
-    def calc_impedance_sr(self, bunches_rescaled=None):
+    def en_hist(self):
+        yy = np.sum(self.mat['En_hist'], axis=0)
+        xx = np.squeeze(self.mat['En_g_hist'])
+
+        return xx, yy
+
+    def calc_impedance_sr(self, bunches_rescaled=None, double_hl=False):
+        """
+        Arguments:
+            bunches_rescaled: Number of filled bunches for which impedance should be calculated
+            double_hl: Apply a factor 2 to the output.
+        """
         bunch_int = np.array([self.beam_beam.fact_beam * self.filling_pattern])
         sigma_t = self.beam_beam.sigmaz/c
         fill_energy = self.beam_beam.energy_eV
         #n_bunches = np.sum(self.filling_pattern)
-        imp = imp_calc.calculate_P_Wm(bunch_int, sigma_t, fill_energy) *53.45
-        sr = sr_calc.calculate_P_Wm(bunch_int, sigma_t, fill_energy) *53.45
+        imp = imp_calc.calculate_P_Wm(bunch_int, sigma_t, fill_energy) * const_len_cryogenic_cell
+        sr = sr_calc.calculate_P_Wm(bunch_int, sigma_t, fill_energy) * const_len_cryogenic_cell
 
         if bunches_rescaled is None:
-            factor = 1
+            factor_bunches = 1
         else:
-            factor = bunches_rescaled/np.sum(self.filling_pattern)
-        return imp*factor, sr*factor
+            factor_bunches = bunches_rescaled/np.sum(self.filling_pattern)
+
+        if double_hl:
+            factor_double = 2
+        else:
+            factor_double = 1
+        return imp*factor_bunches*factor_double, sr*factor_bunches*factor_double
 
